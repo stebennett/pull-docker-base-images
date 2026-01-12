@@ -14,22 +14,13 @@ When building Docker images in CI, base images need to be pulled from registries
 
 If your Dockerfiles use base images from private registries, you must authenticate with `docker/login-action` (or equivalent) **before** running this action.
 
-## Usage
-
-```yaml
-- name: Pre-pull base images
-  uses: stebennett/pull-docker-base-images@v1
-  with:
-    directories: 'backend,web'
-```
-
 ## Inputs
 
 | Input | Required | Description |
 |-------|----------|-------------|
 | `directories` | Yes | Comma-separated list of directories to scan for Dockerfiles |
 
-## Example Workflow
+## Example
 
 ```yaml
 name: Build
@@ -44,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Required: Log in to your private registry before pulling base images
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -51,15 +43,23 @@ jobs:
           username: ${{ secrets.REGISTRY_USER }}
           password: ${{ secrets.REGISTRY_TOKEN }}
 
+      # Pull all base images from Dockerfiles in the specified directories
       - name: Pre-pull base images
         uses: stebennett/pull-docker-base-images@v1
         with:
-          directories: 'backend,web,services'
+          directories: 'backend,web'
 
-      - name: Build Docker image
+      # Now build your images - base images are already cached
+      - name: Build Backend
         uses: docker/build-push-action@v6
         with:
           context: ./backend
+          push: false
+
+      - name: Build Web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
           push: false
 ```
 
