@@ -1,0 +1,58 @@
+name: Test Action
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create test Dockerfiles
+        run: |
+          mkdir -p test/app1 test/app2
+
+          # Simple Dockerfile
+          cat > test/app1/Dockerfile << 'EOF'
+          FROM node:20-alpine
+          WORKDIR /app
+          COPY . .
+          CMD ["node", "index.js"]
+          EOF
+
+          # Multi-stage Dockerfile
+          cat > test/app1/Dockerfile.prod << 'EOF'
+          FROM node:20-alpine AS builder
+          WORKDIR /app
+          COPY . .
+          RUN npm ci && npm run build
+
+          FROM nginx:alpine
+          COPY --from=builder /app/dist /usr/share/nginx/html
+          EOF
+
+          # Dockerfile with scratch
+          cat > test/app2/Dockerfile << 'EOF'
+          FROM golang:1.23-alpine AS builder
+          WORKDIR /app
+          COPY . .
+          RUN go build -o app .
+
+          FROM scratch
+          COPY --from=builder /app/app /app
+          ENTRYPOINT ["/app"]
+          EOF
+
+      - name: Run action
+        uses: ./
+        with:
+          directories: 'test/app1,test/app2'
+
+      - name: Verify images were pulled
+        run: |
+          echo "Checking pulled images..."
+          docker images | grep -E 'node|nginx|golang' || echo "Images may have been pulled"

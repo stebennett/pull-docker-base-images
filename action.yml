@@ -1,0 +1,75 @@
+name: 'Pull Docker Base Images'
+description: 'Scans directories for Dockerfiles and pulls all base images from FROM statements'
+author: 'stebennett'
+
+branding:
+  icon: 'download-cloud'
+  color: 'blue'
+
+inputs:
+  directories:
+    description: 'Comma-separated list of directories to scan for Dockerfiles'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Pull base images from Dockerfiles
+      shell: bash
+      run: |
+        set -e
+
+        DIRS="${{ inputs.directories }}"
+
+        # Convert comma-separated list to array
+        IFS=',' read -ra DIR_ARRAY <<< "$DIRS"
+
+        # Collect all Dockerfiles
+        DOCKERFILES=""
+        for dir in "${DIR_ARRAY[@]}"; do
+          # Trim whitespace
+          dir=$(echo "$dir" | xargs)
+          if [ -d "$dir" ]; then
+            # Find all Dockerfile* files in the directory
+            found=$(find "$dir" -maxdepth 1 -name 'Dockerfile*' -type f 2>/dev/null || true)
+            if [ -n "$found" ]; then
+              DOCKERFILES="$DOCKERFILES $found"
+            fi
+          else
+            echo "Warning: Directory '$dir' not found, skipping"
+          fi
+        done
+
+        if [ -z "$DOCKERFILES" ]; then
+          echo "No Dockerfiles found in specified directories"
+          exit 0
+        fi
+
+        echo "Found Dockerfiles:"
+        echo "$DOCKERFILES" | tr ' ' '\n' | grep -v '^$'
+        echo ""
+
+        # Extract unique base images from FROM statements
+        # Handles: FROM image, FROM image:tag, FROM image AS stage, FROM image:tag AS stage
+        IMAGES=$(grep -h '^FROM' $DOCKERFILES | \
+          sed 's/FROM \([^ ]*\).*/\1/' | \
+          grep -v '^scratch$' | \
+          sort -u)
+
+        if [ -z "$IMAGES" ]; then
+          echo "No base images to pull"
+          exit 0
+        fi
+
+        echo "Pulling base images:"
+        echo "$IMAGES"
+        echo ""
+
+        # Pull each image
+        for image in $IMAGES; do
+          echo "Pulling $image..."
+          docker pull "$image"
+        done
+
+        echo ""
+        echo "All base images pulled successfully"
